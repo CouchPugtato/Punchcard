@@ -221,6 +221,27 @@ func (a *App) SetTaskCompleted(taskID string, completed bool) error {
 	return tx.Commit()
 }
 
+// DeleteTask permanently removes a completed task and its time entries.
+func (a *App) DeleteTask(taskID string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.ready(); err != nil {
+		return err
+	}
+	result, err := a.db.Exec(`DELETE FROM tasks WHERE id = ? AND completed = 1`, taskID)
+	if err != nil {
+		return err
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if deleted == 0 {
+		return errors.New("only completed tasks can be deleted")
+	}
+	return nil
+}
+
 func (a *App) StartTimer(taskID string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()

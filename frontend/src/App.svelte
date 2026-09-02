@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { CreateTask, ExportBackup, GetState, GetTaskTimeSummary, ImportBackup, SetTaskCompleted, StartTimer, StopTimer } from '../wailsjs/go/main/App'
+  import { CreateTask, DeleteTask, ExportBackup, GetState, GetTaskTimeSummary, ImportBackup, SetTaskCompleted, StartTimer, StopTimer } from '../wailsjs/go/main/App'
   import { Quit, WindowMinimise, WindowToggleMaximise } from '../wailsjs/runtime/runtime'
 
   type Task = { id: string; title: string; completed: boolean }
@@ -17,6 +17,7 @@
   let error = ''
   let now = Date.now()
   let statsTask: Task | null = null
+  let deleteTarget: Task | null = null
   let summary: TimeSummary | null = null
   let statsLoading = false
   let menuX = 0
@@ -103,7 +104,7 @@
 
   async function showTaskMenu(event: MouseEvent, task: Task) {
     menuX = Math.min(event.clientX, window.innerWidth - 205)
-    menuY = Math.min(event.clientY, window.innerHeight - 174)
+    menuY = Math.min(event.clientY, window.innerHeight - (task.completed ? 215 : 174))
     statsTask = task
     summary = null
     statsLoading = true
@@ -115,6 +116,27 @@
       statsTask = null
     } finally {
       statsLoading = false
+    }
+  }
+
+  function requestDelete() {
+    const task = statsTask
+    if (!task) return
+    deleteTarget = task
+    statsTask = null
+  }
+
+  async function confirmDelete() {
+    const task = deleteTarget
+    if (!task) return
+    try {
+      busy = true
+      await DeleteTask(task.id)
+      deleteTarget = null
+      await refresh()
+    } catch (reason) {
+      error = message(reason)
+      busy = false
     }
   }
 
@@ -138,6 +160,7 @@
 <svelte:window on:click={() => statsTask = null} on:keydown={(event) => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'n') addingTask = true
   if (event.code === 'Space' && event.target === document.body) { event.preventDefault(); void toggleTimer() }
+  if (event.key === 'Escape') { statsTask = null; deleteTarget = null }
 }} />
 
 <main class="app-window">
@@ -215,5 +238,22 @@
     <div><span>LAST 7 DAYS</span><b>{statsLoading ? '...' : compactTime(summary?.lastWeekSeconds || 0)}</b></div>
     <div><span>LAST 30 DAYS</span><b>{statsLoading ? '...' : compactTime(summary?.lastMonthSeconds || 0)}</b></div>
     <div class="all-time"><span>ALL TIME</span><b>{statsLoading ? '...' : compactTime(summary?.allTimeSeconds || 0)}</b></div>
+    {#if statsTask.completed}<button class="delete-task" on:click|stopPropagation={requestDelete}>DELETE TASK</button>{/if}
+  </div>
+{/if}
+
+{#if deleteTarget}
+  <div class="modal-layer">
+    <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-message">
+      <div class="confirm-title"><span aria-hidden="true">!</span><strong id="delete-title">DELETE TASK?</strong><i></i></div>
+      <div class="confirm-body">
+        <div class="trash-icon" aria-hidden="true">×</div>
+        <div><strong>{deleteTarget.title}</strong><p id="delete-message">This permanently removes the task and all of its recorded time.</p></div>
+      </div>
+      <div class="confirm-actions">
+        <button on:click={() => deleteTarget = null}>CANCEL</button>
+        <button class="confirm-delete" disabled={busy} on:click={confirmDelete}>DELETE</button>
+      </div>
+    </div>
   </div>
 {/if}

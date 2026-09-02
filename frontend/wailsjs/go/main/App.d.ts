@@ -4,6 +4,8 @@ import {main} from '../models';
 
 export function CreateTask(arg1:main.CreateTaskInput):Promise<main.Task>;
 
+export function DeleteTask(arg1:string):Promise<void>;
+
 export function ExportBackup():Promise<string>;
 
 export function GetState():Promise<main.AppState>;

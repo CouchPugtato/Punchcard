@@ -134,3 +134,33 @@ func TestTaskTimeSummaryUsesRollingWindows(t *testing.T) {
 		t.Fatalf("unexpected long-range totals: %#v", summary)
 	}
 }
+
+func TestDeleteTaskRequiresCompletionAndRemovesEntries(t *testing.T) {
+	app := newTestApp(t)
+	task, err := app.CreateTask(CreateTaskInput{Title: "Disposable"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.DeleteTask(task.ID); err == nil {
+		t.Fatal("open task should not be deletable")
+	}
+	if err := app.StartTimer(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.StopTimer(""); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.SetTaskCompleted(task.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.DeleteTask(task.ID); err != nil {
+		t.Fatalf("delete completed task: %v", err)
+	}
+	state, err := app.GetState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Tasks) != 0 || len(state.Entries) != 0 {
+		t.Fatalf("task data was not deleted: %#v", state)
+	}
+}
