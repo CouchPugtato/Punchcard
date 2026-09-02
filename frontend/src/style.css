@@ -118,6 +118,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px d
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .live .kicker { animation: blink 2s steps(2, end) infinite; }
-  @keyframes blink { 50% { opacity: .45; } }
+  .live .kicker { animation: blink 4.25s linear infinite; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 }
