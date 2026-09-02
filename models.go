@@ -20,10 +20,12 @@ type TimeEntry struct {
 }
 
 type ActiveTimer struct {
-	TaskID    string `json:"taskId"`
-	TaskTitle string `json:"taskTitle"`
-	StartedAt string `json:"startedAt"`
-	DeviceID  string `json:"deviceId"`
+	TaskID         string `json:"taskId"`
+	TaskTitle      string `json:"taskTitle"`
+	StartedAt      string `json:"startedAt"`
+	DeviceID       string `json:"deviceId"`
+	Paused         bool   `json:"paused"`
+	SessionSeconds int64  `json:"sessionSeconds"`
 }
 
 type AppState struct {

@@ -87,6 +87,8 @@ func (a *App) openDatabaseAt(path string) error {
 			task_id TEXT NOT NULL,
 			started_at TEXT NOT NULL,
 			device_id TEXT NOT NULL,
+			paused INTEGER NOT NULL DEFAULT 0,
+			session_seconds INTEGER NOT NULL DEFAULT 0,
 			FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
 		);
 		CREATE TABLE IF NOT EXISTS settings (
@@ -94,6 +96,14 @@ func (a *App) openDatabaseAt(path string) error {
 			value TEXT NOT NULL
 		);
 	`); err != nil {
+		_ = db.Close()
+		return err
+	}
+	if err := ensureColumn(db, "active_timer", "paused", `ALTER TABLE active_timer ADD COLUMN paused INTEGER NOT NULL DEFAULT 0`); err != nil {
+		_ = db.Close()
+		return err
+	}
+	if err := ensureColumn(db, "active_timer", "session_seconds", `ALTER TABLE active_timer ADD COLUMN session_seconds INTEGER NOT NULL DEFAULT 0`); err != nil {
 		_ = db.Close()
 		return err
 	}
@@ -164,8 +174,8 @@ func (a *App) getState() (AppState, error) {
 	}
 
 	var timer ActiveTimer
-	err = a.db.QueryRow(`SELECT a.task_id, t.title, a.started_at, a.device_id FROM active_timer a JOIN tasks t ON t.id = a.task_id WHERE singleton = 1`).
-		Scan(&timer.TaskID, &timer.TaskTitle, &timer.StartedAt, &timer.DeviceID)
+	err = a.db.QueryRow(`SELECT a.task_id, t.title, a.started_at, a.device_id, a.paused, a.session_seconds FROM active_timer a JOIN tasks t ON t.id = a.task_id WHERE singleton = 1`).
+		Scan(&timer.TaskID, &timer.TaskTitle, &timer.StartedAt, &timer.DeviceID, &timer.Paused, &timer.SessionSeconds)
 	if err == nil {
 		state.ActiveTimer = &timer
 	} else if !errors.Is(err, sql.ErrNoRows) {
@@ -266,7 +276,7 @@ func (a *App) StartTimer(taskID string) error {
 	if err := a.stopTimerTx(tx, ""); err != nil {
 		return err
 	}
-	_, err = tx.Exec(`INSERT INTO active_timer(singleton, task_id, started_at, device_id) VALUES(1, ?, ?, ?)`,
+	_, err = tx.Exec(`INSERT INTO active_timer(singleton, task_id, started_at, device_id, paused, session_seconds) VALUES(1, ?, ?, ?, 0, 0)`,
 		taskID, time.Now().UTC().Format(time.RFC3339Nano), a.deviceID)
 	if err != nil {
 		return err
@@ -289,6 +299,69 @@ func (a *App) StopTimer(note string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// PauseTimer saves the current running segment and keeps the task punched in.
+func (a *App) PauseTimer() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.ready(); err != nil {
+		return err
+	}
+	tx, err := a.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskID, startedAt, deviceID string
+	var paused bool
+	var sessionSeconds int64
+	if err := tx.QueryRow(`SELECT task_id, started_at, device_id, paused, session_seconds FROM active_timer WHERE singleton = 1`).
+		Scan(&taskID, &startedAt, &deviceID, &paused, &sessionSeconds); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no active timer")
+		}
+		return err
+	}
+	if paused {
+		return tx.Commit()
+	}
+	started, err := time.Parse(time.RFC3339Nano, startedAt)
+	if err != nil {
+		return err
+	}
+	ended := time.Now().UTC()
+	duration := max(int64(1), int64(ended.Sub(started).Seconds()))
+	endedAt := ended.Format(time.RFC3339Nano)
+	if _, err := tx.Exec(`INSERT INTO time_entries(id, task_id, started_at, ended_at, duration_seconds, note, device_id, created_at) VALUES(?, ?, ?, ?, ?, '', ?, ?)`,
+		newID(), taskID, startedAt, endedAt, duration, deviceID, endedAt); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE active_timer SET paused = 1, started_at = ?, session_seconds = ? WHERE singleton = 1`, endedAt, sessionSeconds+duration); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ResumeTimer begins a new timed segment for the paused task.
+func (a *App) ResumeTimer() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.ready(); err != nil {
+		return err
+	}
+	result, err := a.db.Exec(`UPDATE active_timer SET paused = 0, started_at = ? WHERE singleton = 1 AND paused = 1`, time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated == 0 {
+		return errors.New("timer is not paused")
+	}
+	return nil
 }
 
 // GetTaskTimeSummary returns rolling totals based on the exact persisted start
@@ -329,9 +402,10 @@ func (a *App) GetTaskTimeSummary(taskID string) (TaskTimeSummary, error) {
 	}
 
 	var activeStartedAt string
-	err = a.db.QueryRow(`SELECT started_at FROM active_timer WHERE singleton = 1 AND task_id = ?`, taskID).Scan(&activeStartedAt)
+	var activePaused bool
+	err = a.db.QueryRow(`SELECT started_at, paused FROM active_timer WHERE singleton = 1 AND task_id = ?`, taskID).Scan(&activeStartedAt, &activePaused)
 	if err == nil {
-		if started, parseErr := time.Parse(time.RFC3339Nano, activeStartedAt); parseErr == nil && now.After(started) {
+		if started, parseErr := time.Parse(time.RFC3339Nano, activeStartedAt); !activePaused && parseErr == nil && now.After(started) {
 			summary.AllTimeSeconds += int64(now.Sub(started).Seconds())
 			summary.LastDaySeconds += overlapSeconds(started, now, now.Add(-24*time.Hour), now)
 			summary.LastWeekSeconds += overlapSeconds(started, now, now.Add(-7*24*time.Hour), now)
@@ -349,7 +423,9 @@ func (a *App) stopTimerTx(tx *sql.Tx, onlyTaskID string) error {
 
 func (a *App) stopTimerTxWithNote(tx *sql.Tx, onlyTaskID, note string) error {
 	var taskID, startedAt, deviceID string
-	err := tx.QueryRow(`SELECT task_id, started_at, device_id FROM active_timer WHERE singleton = 1`).Scan(&taskID, &startedAt, &deviceID)
+	var paused bool
+	var sessionSeconds int64
+	err := tx.QueryRow(`SELECT task_id, started_at, device_id, paused, session_seconds FROM active_timer WHERE singleton = 1`).Scan(&taskID, &startedAt, &deviceID, &paused, &sessionSeconds)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
@@ -359,16 +435,18 @@ func (a *App) stopTimerTxWithNote(tx *sql.Tx, onlyTaskID, note string) error {
 	if onlyTaskID != "" && onlyTaskID != taskID {
 		return nil
 	}
-	started, err := time.Parse(time.RFC3339Nano, startedAt)
-	if err != nil {
-		return err
-	}
-	ended := time.Now().UTC()
-	duration := max(int64(1), int64(ended.Sub(started).Seconds()))
-	nowText := ended.Format(time.RFC3339Nano)
-	if _, err = tx.Exec(`INSERT INTO time_entries(id, task_id, started_at, ended_at, duration_seconds, note, device_id, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-		newID(), taskID, startedAt, nowText, duration, note, deviceID, nowText); err != nil {
-		return err
+	if !paused {
+		started, err := time.Parse(time.RFC3339Nano, startedAt)
+		if err != nil {
+			return err
+		}
+		ended := time.Now().UTC()
+		duration := max(int64(1), int64(ended.Sub(started).Seconds()))
+		nowText := ended.Format(time.RFC3339Nano)
+		if _, err = tx.Exec(`INSERT INTO time_entries(id, task_id, started_at, ended_at, duration_seconds, note, device_id, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+			newID(), taskID, startedAt, nowText, duration, note, deviceID, nowText); err != nil {
+			return err
+		}
 	}
 	_, err = tx.Exec(`DELETE FROM active_timer WHERE singleton = 1`)
 	return err
@@ -489,4 +567,32 @@ func overlapSeconds(start, end, windowStart, windowEnd time.Time) int64 {
 		return 0
 	}
 	return int64(end.Sub(start).Seconds())
+}
+
+func ensureColumn(db *sql.DB, table, column, statement string) error {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, dataType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if name == column {
+			found = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = db.Exec(statement)
+	return err
 }

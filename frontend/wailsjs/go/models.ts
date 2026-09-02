@@ -5,6 +5,8 @@ export namespace main {
 	    taskTitle: string;
 	    startedAt: string;
 	    deviceId: string;
+	    paused: boolean;
+	    sessionSeconds: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ActiveTimer(source);
@@ -16,6 +18,8 @@ export namespace main {
 	        this.taskTitle = source["taskTitle"];
 	        this.startedAt = source["startedAt"];
 	        this.deviceId = source["deviceId"];
+	        this.paused = source["paused"];
+	        this.sessionSeconds = source["sessionSeconds"];
 	    }
 	}
 	export class TimeEntry {

@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { CreateTask, DeleteTask, ExportBackup, GetState, GetTaskTimeSummary, ImportBackup, SetTaskCompleted, StartTimer, StopTimer } from '../wailsjs/go/main/App'
+  import { CreateTask, DeleteTask, ExportBackup, GetState, GetTaskTimeSummary, ImportBackup, PauseTimer, ResumeTimer, SetTaskCompleted, StartTimer, StopTimer } from '../wailsjs/go/main/App'
   import { Quit, WindowMinimise, WindowToggleMaximise } from '../wailsjs/runtime/runtime'
 
   type Task = { id: string; title: string; completed: boolean }
   type Entry = { taskId: string; durationSeconds: number }
-  type Timer = { taskId: string; taskTitle: string; startedAt: string }
+  type Timer = { taskId: string; taskTitle: string; startedAt: string; paused: boolean; sessionSeconds: number }
   type State = { tasks: Task[]; entries: Entry[]; activeTimer: Timer | null }
   type TimeSummary = { taskId: string; lastDaySeconds: number; lastWeekSeconds: number; lastMonthSeconds: number; allTimeSeconds: number }
 
@@ -25,17 +25,14 @@
 
   $: openTasks = state.tasks.filter(task => !task.completed)
   $: selectedTask = state.tasks.find(task => task.id === selectedTaskID)
-  $: elapsed = state.activeTimer
+  $: activeSegment = state.activeTimer && !state.activeTimer.paused
     ? Math.max(0, Math.floor((now - new Date(state.activeTimer.startedAt).getTime()) / 1000))
     : 0
+  $: elapsed = state.activeTimer ? state.activeTimer.sessionSeconds + activeSegment : 0
   $: totals = state.entries.reduce((sum, entry) => {
     sum[entry.taskId] = (sum[entry.taskId] || 0) + entry.durationSeconds
     return sum
   }, {} as Record<string, number>)
-  $: actionLabel = state.activeTimer
-    ? selectedTaskID && selectedTaskID !== state.activeTimer.taskId ? 'SWITCH TASK' : 'PUNCH OUT'
-    : 'PUNCH IN'
-
   onMount(() => {
     void refresh()
     const ticker = window.setInterval(() => now = Date.now(), 1000)
@@ -60,8 +57,21 @@
     if (!selectedTaskID && !state.activeTimer) return
     try {
       busy = true
-      if (state.activeTimer && (!selectedTaskID || selectedTaskID === state.activeTimer.taskId)) await StopTimer('')
+      if (state.activeTimer) await StopTimer('')
       else await StartTimer(selectedTaskID)
+      await refresh()
+    } catch (reason) {
+      error = message(reason)
+      busy = false
+    }
+  }
+
+  async function togglePause() {
+    if (!state.activeTimer) return
+    try {
+      busy = true
+      if (state.activeTimer.paused) await ResumeTimer()
+      else await PauseTimer()
       await refresh()
     } catch (reason) {
       error = message(reason)
@@ -176,13 +186,18 @@
 
   <div class="workspace">
     <section class="timer-pane">
-      <div class:live={state.activeTimer} class="timer-card">
-        <span class="kicker">{state.activeTimer ? '● ON THE CLOCK' : 'READY TO WORK'}</span>
+      <div class:live={state.activeTimer && !state.activeTimer.paused} class:paused={state.activeTimer?.paused} class="timer-card">
+        <span class="kicker">{state.activeTimer ? state.activeTimer.paused ? 'Ⅱ PAUSED' : '● ON THE CLOCK' : 'READY TO WORK'}</span>
         <h1>{state.activeTimer?.taskTitle || selectedTask?.title || 'Select a task'}</h1>
         <div class="timer">{formatTime(elapsed)}</div>
-        <button class:stop={state.activeTimer && selectedTaskID === state.activeTimer.taskId} class="punch-button" disabled={busy || (!selectedTaskID && !state.activeTimer)} on:click={toggleTimer}>
-          {state.activeTimer && selectedTaskID === state.activeTimer.taskId ? '■' : '▶'} {actionLabel}
-        </button>
+        {#if state.activeTimer}
+          <div class="timer-actions">
+            <button class="pause-button" disabled={busy} on:click={togglePause}>{state.activeTimer.paused ? '▶ RESUME' : 'Ⅱ PAUSE'}</button>
+            <button class="punch-button stop" disabled={busy} on:click={toggleTimer}>■ PUNCH OUT</button>
+          </div>
+        {:else}
+          <button class="punch-button" disabled={busy || !selectedTaskID} on:click={toggleTimer}>▶ PUNCH IN</button>
+        {/if}
       </div>
 
       <div class="options">
@@ -222,7 +237,7 @@
           <div class:selected={selectedTaskID === task.id} class:completed={task.completed} class:active={state.activeTimer?.taskId === task.id} class="task-row">
             <button class="check" aria-label={task.completed ? `Reopen ${task.title}` : `Complete ${task.title}`} on:click={() => complete(task)}>{task.completed ? '✓' : ''}</button>
             <button class="task-name" title="Right-click for time summary" on:click={() => { if (!task.completed) selectedTaskID = task.id }} on:contextmenu|preventDefault={(event) => showTaskMenu(event, task)}>
-              <strong>{task.title}</strong><span>{compactTime((totals[task.id] || 0) + (state.activeTimer?.taskId === task.id ? elapsed : 0))}</span>
+              <strong>{task.title}</strong><span>{compactTime((totals[task.id] || 0) + (state.activeTimer?.taskId === task.id ? activeSegment : 0))}</span>
             </button>
           </div>
         {/each}

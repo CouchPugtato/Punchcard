@@ -26,6 +26,14 @@ export function ImportBackup() {
   return window['go']['main']['App']['ImportBackup']();
 }
 
+export function PauseTimer() {
+  return window['go']['main']['App']['PauseTimer']();
+}
+
+export function ResumeTimer() {
+  return window['go']['main']['App']['ResumeTimer']();
+}
+
 export function SetTaskCompleted(arg1, arg2) {
   return window['go']['main']['App']['SetTaskCompleted'](arg1, arg2);
 }

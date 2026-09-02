@@ -42,11 +42,17 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px d
 .timer-card.live { box-shadow: 5px 5px 0 var(--shadow); }
 .kicker { padding: 4px 9px; border: 1px solid var(--line); border-radius: 3px; color: var(--line); background: var(--raised); font-size: 9px; font-weight: 700; letter-spacing: .08em; }
 .live .kicker { color: var(--paper-light); background: var(--line); }
+.paused .kicker { color: var(--line); background: var(--paper-light); border-style: dashed; }
 .timer-card h1 { width: 100%; margin: 13px 0 19px; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-medium); font-size: 20px; white-space: nowrap; -webkit-font-smoothing: none; text-rendering: optimizeSpeed; }
 .timer { min-width: 280px; padding: 13px 17px 10px; border: 2px solid var(--line); border-radius: 3px; color: var(--line); background: var(--paper-light); box-shadow: inset 0 -5px 0 rgba(184,170,136,.3), 3px 3px 0 rgba(73,63,48,.35); font-family: var(--font-large); font-size: clamp(42px, 6.5vw, 58px); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.04em; line-height: 1; -webkit-font-smoothing: none; text-rendering: optimizeSpeed; }
 .punch-button { min-width: 154px; height: 40px; margin-top: 22px; border: 2px solid var(--line); border-radius: 3px; color: var(--line); background: var(--raised); box-shadow: 3px 3px 0 var(--shadow); font-size: 10px; font-weight: 700; letter-spacing: .07em; }
 .punch-button.stop { color: var(--paper-light); background: var(--line); }
 .punch-button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--shadow); }
+.timer-actions { display: flex; gap: 10px; margin-top: 22px; }
+.timer-actions .punch-button { min-width: 126px; margin-top: 0; }
+.timer-actions button:disabled { opacity: 1; cursor: wait; }
+.pause-button { min-width: 112px; height: 40px; border: 2px solid var(--line); border-radius: 3px; color: var(--line); background: var(--paper-light); box-shadow: 3px 3px 0 var(--shadow); font-family: var(--font-pixel); font-size: 10px; font-weight: 700; }
+.pause-button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--shadow); }
 
 .options { display: grid; grid-template-columns: minmax(120px, 1fr) auto auto auto; gap: 6px; align-items: end; padding: 9px; border: 2px solid var(--line); border-radius: 4px; background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); }
 .options label { display: grid; gap: 4px; min-width: 0; }

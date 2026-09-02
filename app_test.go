@@ -164,3 +164,48 @@ func TestDeleteTaskRequiresCompletionAndRemovesEntries(t *testing.T) {
 		t.Fatalf("task data was not deleted: %#v", state)
 	}
 }
+
+func TestPauseResumePersistsSeparateSegments(t *testing.T) {
+	app := newTestApp(t)
+	task, err := app.CreateTask(CreateTaskInput{Title: "Pause safely"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.StartTimer(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	firstStart := time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339Nano)
+	if _, err := app.db.Exec(`UPDATE active_timer SET started_at = ? WHERE singleton = 1`, firstStart); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.PauseTimer(); err != nil {
+		t.Fatal(err)
+	}
+	state, err := app.GetState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ActiveTimer == nil || !state.ActiveTimer.Paused || state.ActiveTimer.SessionSeconds < 599 {
+		t.Fatalf("timer was not persistently paused: %#v", state.ActiveTimer)
+	}
+	if len(state.Entries) != 1 {
+		t.Fatalf("pause should save one segment, got %d", len(state.Entries))
+	}
+	if err := app.ResumeTimer(); err != nil {
+		t.Fatal(err)
+	}
+	secondStart := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339Nano)
+	if _, err := app.db.Exec(`UPDATE active_timer SET started_at = ? WHERE singleton = 1`, secondStart); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.StopTimer(""); err != nil {
+		t.Fatal(err)
+	}
+	state, err = app.GetState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ActiveTimer != nil || len(state.Entries) != 2 {
+		t.Fatalf("punch out should close the resumed timer with two saved segments: %#v", state)
+	}
+}
