@@ -209,3 +209,30 @@ func TestPauseResumePersistsSeparateSegments(t *testing.T) {
 		t.Fatalf("punch out should close the resumed timer with two saved segments: %#v", state)
 	}
 }
+
+func TestLogTimeCrossesMidnightWithoutNegativeDuration(t *testing.T) {
+	app := newTestApp(t)
+	task, err := app.CreateTask(CreateTaskInput{Title: "Overnight work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := "2026-09-01T23:00:00Z"
+	end := "2026-09-01T02:00:00Z"
+	if err := app.LogTime(task.ID, start, end); err != nil {
+		t.Fatalf("log overnight time: %v", err)
+	}
+	state, err := app.GetState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Entries) != 1 {
+		t.Fatalf("expected one entry, got %d", len(state.Entries))
+	}
+	entry := state.Entries[0]
+	if entry.DurationSeconds != 3*60*60 {
+		t.Fatalf("expected three hours, got %d seconds", entry.DurationSeconds)
+	}
+	if entry.StartedAt != "2026-09-01T23:00:00Z" || entry.EndedAt != "2026-09-02T02:00:00Z" {
+		t.Fatalf("unexpected persisted range: %s to %s", entry.StartedAt, entry.EndedAt)
+	}
+}

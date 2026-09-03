@@ -8,6 +8,7 @@ Punchcard is a local-first desktop timekeeper with a compact, classic Macintosh-
 - Run one durable timer at a time
 - Automatically punch out the current task when another starts
 - Recover an active timer after an app restart or system sleep
+- Add manual start/end time ranges, including sessions crossing midnight
 - Show accumulated time beside each task
 - Right-click any task for rolling 24-hour, 7-day, 30-day, and all-time totals
 - Export and merge versioned JSON backups

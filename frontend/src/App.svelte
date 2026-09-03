@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { CreateTask, DeleteTask, ExportBackup, GetState, GetTaskTimeSummary, ImportBackup, PauseTimer, ResumeTimer, SetTaskCompleted, StartTimer, StopTimer } from '../wailsjs/go/main/App'
+  import { CreateTask, DeleteTask, GetState, GetTaskTimeSummary, LogTime, PauseTimer, ResumeTimer, SetTaskCompleted, StartTimer, StopTimer } from '../wailsjs/go/main/App'
   import { Quit, WindowMinimise, WindowToggleMaximise } from '../wailsjs/runtime/runtime'
 
   type Task = { id: string; title: string; completed: boolean }
@@ -22,6 +22,8 @@
   let statsLoading = false
   let menuX = 0
   let menuY = 0
+  let logStart = timeValue(new Date(Date.now() - 60 * 60 * 1000))
+  let logEnd = timeValue(new Date())
 
   $: openTasks = state.tasks.filter(task => !task.completed)
   $: selectedTask = state.tasks.find(task => task.id === selectedTaskID)
@@ -103,12 +105,23 @@
     }
   }
 
-  async function backup(kind: 'export' | 'import') {
+  async function addLoggedTime() {
+    if (!selectedTaskID) {
+      error = 'Select an open task first'
+      return
+    }
+    if (!/^\d{2}:\d{2}$/.test(logStart) || !/^\d{2}:\d{2}$/.test(logEnd) || logStart === logEnd) {
+      error = 'Choose two different start and end times'
+      return
+    }
     try {
-      const path = kind === 'export' ? await ExportBackup() : await ImportBackup()
-      if (path && kind === 'import') await refresh()
+      busy = true
+      const { start, end } = recentRange(logStart, logEnd)
+      await LogTime(selectedTaskID, start.toISOString(), end.toISOString())
+      await refresh()
     } catch (reason) {
       error = message(reason)
+      busy = false
     }
   }
 
@@ -156,6 +169,24 @@
       .map(value => String(value).padStart(2, '0')).join(':')
   }
 
+  function timeValue(date: Date) {
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  }
+
+  function recentRange(startValue: string, endValue: string) {
+    const now = new Date()
+    const [endHour, endMinute] = endValue.split(':').map(Number)
+    const end = new Date(now)
+    end.setHours(endHour, endMinute, 0, 0)
+    if (end.getTime() > now.getTime()) end.setDate(end.getDate() - 1)
+
+    const [startHour, startMinute] = startValue.split(':').map(Number)
+    const start = new Date(end)
+    start.setHours(startHour, startMinute, 0, 0)
+    if (start.getTime() >= end.getTime()) start.setDate(start.getDate() - 1)
+    return { start, end }
+  }
+
   function compactTime(seconds: number) {
     const hours = Math.floor(seconds / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)
@@ -201,16 +232,10 @@
       </div>
 
       <div class="options">
-        <label>
-          <span>TASK</span>
-          <select bind:value={selectedTaskID} disabled={openTasks.length === 0}>
-            {#if openTasks.length === 0}<option value="">No open tasks</option>{/if}
-            {#each openTasks as task}<option value={task.id}>{task.title}</option>{/each}
-          </select>
-        </label>
-        <button on:click={() => addingTask = true}>＋ NEW</button>
-        <button on:click={() => backup('export')}>EXPORT</button>
-        <button on:click={() => backup('import')}>IMPORT</button>
+        <div class="log-heading"><span>LOG TIME</span></div>
+        <label><span>START</span><input type="time" bind:value={logStart} /></label>
+        <label><span>END</span><input type="time" bind:value={logEnd} /></label>
+        <button class="log-add" disabled={busy || !selectedTaskID} on:click={addLoggedTime}>＋ ADD</button>
       </div>
 
       {#if error}<div class="error" role="alert">{error}<button on:click={() => error = ''}>×</button></div>{/if}

@@ -14,6 +14,8 @@ export function GetTaskTimeSummary(arg1:string):Promise<main.TaskTimeSummary>;
 
 export function ImportBackup():Promise<string>;
 
+export function LogTime(arg1:string,arg2:string,arg3:string):Promise<void>;
+
 export function PauseTimer():Promise<void>;
 
 export function ResumeTimer():Promise<void>;

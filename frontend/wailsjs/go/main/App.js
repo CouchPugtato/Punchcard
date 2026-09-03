@@ -26,6 +26,10 @@ export function ImportBackup() {
   return window['go']['main']['App']['ImportBackup']();
 }
 
+export function LogTime(arg1, arg2, arg3) {
+  return window['go']['main']['App']['LogTime'](arg1, arg2, arg3);
+}
+
 export function PauseTimer() {
   return window['go']['main']['App']['PauseTimer']();
 }

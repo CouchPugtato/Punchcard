@@ -364,6 +364,48 @@ func (a *App) ResumeTimer() error {
 	return nil
 }
 
+// LogTime records a manual start/end range. When an end clock precedes the
+// start clock on the same date, it is treated as crossing midnight.
+func (a *App) LogTime(taskID, startedAt, endedAt string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.ready(); err != nil {
+		return err
+	}
+	started, err := time.Parse(time.RFC3339Nano, startedAt)
+	if err != nil {
+		return errors.New("invalid start time")
+	}
+	ended, err := time.Parse(time.RFC3339Nano, endedAt)
+	if err != nil {
+		return errors.New("invalid end time")
+	}
+	if ended.Equal(started) {
+		return errors.New("start and end time must differ")
+	}
+	if ended.Before(started) {
+		ended = ended.Add(24 * time.Hour)
+	}
+	duration := int64(ended.Sub(started).Seconds())
+	if duration <= 0 || duration > 24*60*60 {
+		return errors.New("logged time must be between 1 second and 24 hours")
+	}
+	var completed bool
+	if err := a.db.QueryRow(`SELECT completed FROM tasks WHERE id = ?`, taskID).Scan(&completed); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("task not found")
+		}
+		return err
+	}
+	if completed {
+		return errors.New("time cannot be added to a completed task")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = a.db.Exec(`INSERT INTO time_entries(id, task_id, started_at, ended_at, duration_seconds, note, device_id, created_at) VALUES(?, ?, ?, ?, ?, '', ?, ?)`,
+		newID(), taskID, started.UTC().Format(time.RFC3339Nano), ended.UTC().Format(time.RFC3339Nano), duration, a.deviceID, now)
+	return err
+}
+
 // GetTaskTimeSummary returns rolling totals based on the exact persisted start
 // and end timestamps. The windows are elapsed periods, not calendar buckets.
 func (a *App) GetTaskTimeSummary(taskID string) (TaskTimeSummary, error) {
