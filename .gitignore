@@ -1,5 +1,6 @@
 # Wails build output and generated state
 build/bin/
+build/windows/installer/tmp/
 frontend/dist/
 frontend/.vite/
 frontend/package.json.md5

@@ -53,6 +53,14 @@ wails build
 
 The Windows build is written to `build/bin/Punchcard.exe`.
 
+Create the Windows installer (requires [NSIS](https://nsis.sourceforge.io/) to be installed):
+
+```powershell
+.\build-installer.ps1
+```
+
+The installer is written to `build/bin/Punchcard-amd64-installer.exe`. It installs per user under `%LOCALAPPDATA%\Programs\Punchcard`, creates Start Menu and Desktop shortcuts, registers an uninstaller, and does not remove the user's Punchcard database during uninstall.
+
 ## Architecture
 
 ```text

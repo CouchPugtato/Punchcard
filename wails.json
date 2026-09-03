@@ -8,5 +8,12 @@
   "frontend:dev:serverUrl": "auto",
   "author": {
     "name": "Punchcard"
+  },
+  "info": {
+    "companyName": "Punchcard",
+    "productName": "Punchcard",
+    "productVersion": "0.1.0",
+    "copyright": "Copyright © 2026 Punchcard",
+    "comments": "A local-first desktop task timer"
   }
 }
