@@ -30,7 +30,22 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px d
 .no-drag, .no-drag * { --wails-draggable: no-drag; }
 .titlebar { display: flex; align-items: center; gap: 9px; padding-left: 10px; border-bottom: 2px solid var(--line); color: var(--line); background: var(--raised); user-select: none; font-size: 10px; letter-spacing: .06em; }
 .app-mark { width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 3px; color: var(--line); background: var(--paper-light); font-size: 9px; }
-.saved { margin-left: auto; color: var(--line); font-size: 8px; opacity: .72; }
+.sync-area { position: relative; align-self: stretch; display: flex; align-items: center; margin-left: auto; }
+.saved { height: 24px; padding: 0 6px; border: 1px solid transparent; background: transparent; color: var(--line); font-size: 8px; opacity: .72; }
+.saved:hover, .saved:focus-visible { border-color: var(--line); background: var(--paper-light); opacity: 1; }
+.saved.error-state { opacity: 1; }
+.saved.syncing { animation: sync-pulse 1s steps(2, end) infinite; }
+.sync-menu { position: absolute; z-index: 60; top: 29px; right: 0; width: 246px; border: 2px solid var(--line); border-radius: 3px; overflow: hidden; background: var(--paper); box-shadow: 5px 5px 0 var(--shadow); }
+.sync-menu-title { height: 29px; display: grid; grid-template-columns: 1fr 27px; align-items: center; padding-left: 8px; border-bottom: 2px solid var(--line); background: var(--raised); box-shadow: inset 0 2px 0 var(--paper-light), inset 0 -2px 0 var(--selected); }
+.sync-menu-title strong { font-size: 9px; letter-spacing: .07em; }
+.sync-menu-title button { align-self: stretch; border: 0; border-left: 1px solid var(--line); background: var(--paper-light); font-size: 12px; font-weight: 700; }
+.sync-menu-body { display: grid; gap: 7px; margin: 5px; padding: 9px; border: 1px solid var(--selected); background: var(--paper); box-shadow: inset 2px 2px 0 rgba(112,99,77,.18); }
+.sync-message { overflow-wrap: anywhere; font-size: 9px; line-height: 1.45; }
+.sync-message.status-error { font-weight: 700; }
+.sync-menu-body small { color: var(--muted); font-size: 7px; line-height: 1.45; }
+.sync-menu-body > button { height: 31px; border: 2px solid var(--line); border-radius: 2px; background: var(--raised); box-shadow: 2px 2px 0 var(--shadow); font-size: 9px; font-weight: 700; }
+.sync-menu-body > button:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--shadow); }
+.sync-menu-body > button.disconnect { color: var(--paper-light); background: var(--line); }
 .window-controls { display: flex; align-self: stretch; margin-left: 7px; }
 .window-controls button { width: 29px; border: 0; border-left: 1px solid rgba(73,63,48,.35); color: var(--line); background: transparent; font-size: 13px; font-weight: 900; }
 .window-controls button:hover { background: var(--paper-light); }
@@ -141,4 +156,5 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px d
 @media (prefers-reduced-motion: no-preference) {
   .live .kicker { animation: blink 4.25s linear infinite; }
   @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  @keyframes sync-pulse { 50% { opacity: .45; } }
 }

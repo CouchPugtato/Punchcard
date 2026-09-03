@@ -114,6 +114,26 @@ export namespace main {
 	        this.title = source["title"];
 	    }
 	}
+	export class DriveSyncStatus {
+	    connected: boolean;
+	    configured: boolean;
+	    state: string;
+	    message: string;
+	    lastSyncedAt: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DriveSyncStatus(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connected = source["connected"];
+	        this.configured = source["configured"];
+	        this.state = source["state"];
+	        this.message = source["message"];
+	        this.lastSyncedAt = source["lastSyncedAt"];
+	    }
+	}
 	
 	export class TaskTimeSummary {
 	    taskId: string;
@@ -137,4 +157,3 @@ export namespace main {
 	}
 
 }
-

@@ -47,9 +47,23 @@ type TaskTimeSummary struct {
 }
 
 type SyncDocument struct {
-	SchemaVersion int         `json:"schemaVersion"`
-	ExportedAt    string      `json:"exportedAt"`
-	DeviceID      string      `json:"deviceId"`
-	Tasks         []Task      `json:"tasks"`
-	Entries       []TimeEntry `json:"entries"`
+	SchemaVersion int             `json:"schemaVersion"`
+	ExportedAt    string          `json:"exportedAt"`
+	DeviceID      string          `json:"deviceId"`
+	Tasks         []Task          `json:"tasks"`
+	Entries       []TimeEntry     `json:"entries"`
+	Tombstones    []TaskTombstone `json:"tombstones,omitempty"`
+}
+
+type TaskTombstone struct {
+	TaskID    string `json:"taskId"`
+	DeletedAt string `json:"deletedAt"`
+}
+
+type DriveSyncStatus struct {
+	Connected    bool   `json:"connected"`
+	Configured   bool   `json:"configured"`
+	State        string `json:"state"`
+	Message      string `json:"message"`
+	LastSyncedAt string `json:"lastSyncedAt"`
 }

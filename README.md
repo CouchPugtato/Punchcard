@@ -12,6 +12,7 @@ Punchcard is a local-first desktop timekeeper with a compact, classic Macintosh-
 - Show accumulated time beside each task
 - Right-click any task for rolling 24-hour, 7-day, 30-day, and all-time totals
 - Export and merge versioned JSON backups
+- Sync tasks and recorded time through Google Drive while remaining fully usable offline
 - Persist all data locally in SQLite
 - Use keyboard shortcuts (`Ctrl/Cmd+N` for a new task and `Esc` to close the dialog)
 
@@ -60,26 +61,31 @@ Svelte + TypeScript UI
 Go application service
         ├── task and timer operations
         ├── reports
-        └── versioned sync document
+        ├── versioned sync/merge document
+        └── Google OAuth + Drive app-data provider
         │
 Local SQLite database
-        │
-JSON export/import ── future Google Drive provider
+        ├── JSON export/import
+        └── hidden Google Drive app-data file
 ```
 
 The database is created in the operating system's user configuration directory under `Punchcard/punchcard.db`. SQLite is the local source of truth; the app never attempts to synchronize the live database file.
 
-The portable `SyncDocument` in `models.go` is the boundary for backup and cloud providers. Imports merge tasks by ID and update timestamp and deduplicate time entries by ID, making the existing JSON workflow suitable for validating the merge format before Drive is connected.
+The portable `SyncDocument` in `models.go` is the boundary for backup and cloud providers. Sync merges tasks by ID and update timestamp, deduplicates immutable time entries by ID, and propagates deletions with timestamped tombstones. Active timers remain device-local; their saved segments sync after pause or punch-out.
 
 ## Google Drive integration
 
-Drive authentication is intentionally not hard-coded. A distributable build needs a Google Cloud desktop OAuth client owned by the publisher. Once its client ID is available, the next integration step is:
+Drive authentication is intentionally not hard-coded. To connect a development build:
 
-1. Add desktop OAuth using the system browser and loopback callback.
-2. Request only the `drive.appdata` scope.
-3. Store the refresh token in the operating system credential vault.
-4. Upload/download the same versioned `SyncDocument` currently used by Export and Import.
-5. Merge on launch, after local changes, on wake, and periodically while online.
-6. Use Drive file versions/ETags and retry the download–merge–upload cycle on conflicts.
+1. In Google Cloud, enable the Google Drive API and configure the OAuth consent screen.
+2. Create an OAuth client with application type **Desktop app** and download its JSON file.
+3. Open Punchcard's sync menu and choose **Connect Drive**.
+4. Select the downloaded JSON when prompted, then finish sign-in in the system browser.
 
-Do not commit an OAuth client secret or refresh token to this repository.
+Punchcard copies the selected client configuration to the operating system's user configuration directory under `Punchcard/google_oauth_client.json`. On Windows, the refresh token is stored in Windows Credential Manager; other platforms use a user-only file in the same configuration directory. The app requests only the `drive.appdata` scope and stores `punchcard-sync-v1.json` in Drive's hidden application-data folder.
+
+Sync runs at startup, two seconds after local changes settle, every five minutes, and when **Sync Now** is pressed. SQLite remains the local source of truth, so failed or unavailable sync never blocks time tracking. Concurrent changes trigger a fresh download–merge–upload attempt.
+
+Publisher builds can inject credentials without the first-run JSON prompt by setting `PUNCHCARD_GOOGLE_CLIENT_ID` and optionally `PUNCHCARD_GOOGLE_CLIENT_SECRET`, or at link time with `-X main.googleClientID=...` and `-X main.googleClientSecret=...`.
+
+Do not commit OAuth credential JSON or refresh tokens to this repository.

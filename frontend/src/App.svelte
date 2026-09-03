@@ -1,13 +1,14 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
-  import { CreateTask, DeleteTask, GetState, GetTaskTimeSummary, LogTime, PauseTimer, ResumeTimer, SetTaskCompleted, StartTimer, StopTimer } from '../wailsjs/go/main/App'
-  import { Quit, WindowMinimise, WindowToggleMaximise } from '../wailsjs/runtime/runtime'
+  import { ConnectGoogleDrive, CreateTask, DeleteTask, DisconnectGoogleDrive, GetDriveSyncStatus, GetState, GetTaskTimeSummary, LogTime, PauseTimer, ResumeTimer, SetTaskCompleted, StartTimer, StopTimer, SyncNow } from '../wailsjs/go/main/App'
+  import { EventsOn, Quit, WindowMinimise, WindowToggleMaximise } from '../wailsjs/runtime/runtime'
 
   type Task = { id: string; title: string; completed: boolean }
   type Entry = { taskId: string; durationSeconds: number }
   type Timer = { taskId: string; taskTitle: string; startedAt: string; paused: boolean; sessionSeconds: number }
   type State = { tasks: Task[]; entries: Entry[]; activeTimer: Timer | null }
   type TimeSummary = { taskId: string; lastDaySeconds: number; lastWeekSeconds: number; lastMonthSeconds: number; allTimeSeconds: number }
+  type DriveStatus = { connected: boolean; configured: boolean; state: string; message: string; lastSyncedAt: string }
 
   let state: State = { tasks: [], entries: [], activeTimer: null }
   let selectedTaskID = ''
@@ -21,6 +22,9 @@
   let deleteTarget: Task | null = null
   let summary: TimeSummary | null = null
   let statsLoading = false
+  let driveStatus: DriveStatus = { connected: false, configured: false, state: 'disconnected', message: 'Saved locally', lastSyncedAt: '' }
+  let syncMenuOpen = false
+  let syncBusy = false
   let menuX = 0
   let menuY = 0
   const initialStart = clockParts(new Date(Date.now() - 60 * 60 * 1000))
@@ -50,11 +54,53 @@
     sum[entry.taskId] = (sum[entry.taskId] || 0) + entry.durationSeconds
     return sum
   }, {} as Record<string, number>)
+  $: driveLabel = driveStatus.state === 'syncing' ? '↻ SYNCING'
+    : driveStatus.state === 'pending' ? '● SYNC PENDING'
+    : driveStatus.state === 'error' ? '! SYNC ERROR'
+    : driveStatus.connected ? '● DRIVE SYNCED' : '● SAVED LOCALLY'
   onMount(() => {
     void refresh()
+    void refreshDriveStatus()
+    const stopStatus = EventsOn('drive:status', (status: DriveStatus) => driveStatus = status)
+    const stopData = EventsOn('drive:data-changed', () => void refresh())
     const ticker = window.setInterval(() => now = Date.now(), 1000)
-    return () => window.clearInterval(ticker)
+    return () => { window.clearInterval(ticker); stopStatus(); stopData() }
   })
+
+  async function refreshDriveStatus() {
+    try {
+      driveStatus = await GetDriveSyncStatus() as DriveStatus
+    } catch {
+      // Local timing remains available if sync status cannot be loaded.
+    }
+  }
+
+  async function driveAction(action: 'connect' | 'sync' | 'disconnect') {
+    try {
+      syncBusy = true
+      if (action === 'connect') driveStatus = await ConnectGoogleDrive() as DriveStatus
+      else if (action === 'sync') driveStatus = await SyncNow() as DriveStatus
+      else driveStatus = await DisconnectGoogleDrive() as DriveStatus
+      if (action !== 'disconnect') await refresh()
+      error = ''
+    } catch (reason) {
+      error = message(reason)
+      await refreshDriveStatus()
+    } finally {
+      syncBusy = false
+    }
+  }
+
+  function lastSyncText() {
+    if (!driveStatus.lastSyncedAt) return 'NOT SYNCED YET'
+    const date = new Date(driveStatus.lastSyncedAt)
+    return Number.isNaN(date.getTime()) ? 'NOT SYNCED YET' : `LAST: ${date.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}`
+  }
+
+  function dismissMenus(event: MouseEvent) {
+    statsTask = null
+    if (!(event.target instanceof Element) || !event.target.closest('.sync-area')) syncMenuOpen = false
+  }
 
   async function refresh() {
     try {
@@ -367,16 +413,34 @@
   }
 </script>
 
-<svelte:window on:click={() => statsTask = null} on:keydown={(event) => {
+<svelte:window on:click={dismissMenus} on:keydown={(event) => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'n') { event.preventDefault(); void beginAddingTask() }
   if (event.code === 'Space' && event.target === document.body) { event.preventDefault(); void toggleTimer() }
-  if (event.key === 'Escape') { statsTask = null; deleteTarget = null }
+  if (event.key === 'Escape') { statsTask = null; deleteTarget = null; syncMenuOpen = false }
 }} />
 
 <main class="app-window">
   <header class="titlebar drag-region">
     <span class="app-mark">⌛</span><strong>PUNCHCARD</strong>
-    <span class="saved">● SAVED LOCALLY</span>
+    <div class="sync-area no-drag">
+      <button class:error-state={driveStatus.state === 'error'} class:syncing={driveStatus.state === 'syncing'} class="saved" title={driveStatus.message} on:click|stopPropagation={() => syncMenuOpen = !syncMenuOpen}>{driveLabel}</button>
+      {#if syncMenuOpen}
+        <div class="sync-menu">
+          <div class="sync-menu-title"><strong>GOOGLE DRIVE</strong><button aria-label="Close sync menu" on:click={() => syncMenuOpen = false}>×</button></div>
+          <div class="sync-menu-body">
+            <span class:status-error={driveStatus.state === 'error'} class="sync-message">{driveStatus.message}</span>
+            <small>{lastSyncText()}</small>
+            {#if driveStatus.connected}
+              <button disabled={syncBusy || driveStatus.state === 'syncing'} on:click={() => driveAction('sync')}>↻ SYNC NOW</button>
+              <button class="disconnect" disabled={syncBusy} on:click={() => driveAction('disconnect')}>DISCONNECT</button>
+            {:else}
+              <button disabled={syncBusy} on:click={() => driveAction('connect')}>CONNECT DRIVE</button>
+              <small>FIRST USE ASKS FOR GOOGLE DESKTOP OAUTH JSON.</small>
+            {/if}
+          </div>
+        </div>
+      {/if}
+    </div>
     <div class="window-controls no-drag">
       <button aria-label="Minimize" on:click={WindowMinimise}>—</button>
       <button aria-label="Maximize" on:click={WindowToggleMaximise}>□</button>

@@ -94,8 +94,66 @@ func TestSyncDocumentContainsLocalData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 1 || document.DeviceID == "" || len(document.Tasks) != 1 {
+	if document.SchemaVersion != 2 || document.DeviceID == "" || len(document.Tasks) != 1 {
 		t.Fatalf("unexpected sync document: %#v", document)
+	}
+}
+
+func TestSyncTombstoneDeletesTaskAcrossDevicesAndBlocksStaleSnapshot(t *testing.T) {
+	source := newTestApp(t)
+	target := newTestApp(t)
+	task, err := source.CreateTask(CreateTaskInput{Title: "Delete everywhere"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale, err := source.buildSyncDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	target.mu.Lock()
+	err = target.mergeSyncDocument(stale)
+	target.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := source.SetTaskCompleted(task.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := source.DeleteTask(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := source.buildSyncDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deleted.Tombstones) != 1 || deleted.Tombstones[0].TaskID != task.ID {
+		t.Fatalf("deletion was not exported: %#v", deleted.Tombstones)
+	}
+	target.mu.Lock()
+	err = target.mergeSyncDocument(deleted)
+	if err == nil {
+		err = target.mergeSyncDocument(stale)
+	}
+	target.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := target.GetState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Tasks) != 0 || len(state.Entries) != 0 {
+		t.Fatalf("stale sync resurrected deleted data: %#v", state)
+	}
+}
+
+func TestParseDesktopOAuthCredentials(t *testing.T) {
+	credentials, err := parseOAuthCredentials([]byte(`{"installed":{"client_id":"desktop-client","client_secret":"not-secret","auth_uri":"https://accounts.example/auth","token_uri":"https://accounts.example/token"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credentials.ClientID != "desktop-client" || credentials.TokenURI != "https://accounts.example/token" {
+		t.Fatalf("unexpected OAuth credentials: %#v", credentials)
 	}
 }
 

@@ -23,6 +23,8 @@ coverage/
 .env
 .env.*
 !.env.example
+google_oauth*.json
+client_secret*.json
 *.log
 npm-debug.log*
 yarn-debug.log*

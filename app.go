@@ -19,22 +19,33 @@ import (
 )
 
 type App struct {
-	ctx      context.Context
-	db       *sql.DB
-	deviceID string
-	mu       sync.Mutex
+	ctx        context.Context
+	db         *sql.DB
+	dataDir    string
+	deviceID   string
+	mu         sync.Mutex
+	syncMu     sync.Mutex
+	statusMu   sync.RWMutex
+	syncStatus DriveSyncStatus
+	syncSignal chan struct{}
+	syncCancel context.CancelFunc
 }
 
-func NewApp() *App { return &App{} }
+func NewApp() *App { return &App{syncSignal: make(chan struct{}, 1)} }
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	if err := a.openDatabase(); err != nil {
 		runtime.LogErrorf(ctx, "database startup failed: %v", err)
+		return
 	}
+	a.startDriveSync()
 }
 
 func (a *App) shutdown(_ context.Context) {
+	if a.syncCancel != nil {
+		a.syncCancel()
+	}
 	if a.db != nil {
 		_ = a.db.Close()
 	}
@@ -49,6 +60,7 @@ func (a *App) openDatabase() error {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return err
 	}
+	a.dataDir = dataDir
 	return a.openDatabaseAt(filepath.Join(dataDir, "punchcard.db"))
 }
 
@@ -94,6 +106,10 @@ func (a *App) openDatabaseAt(path string) error {
 		CREATE TABLE IF NOT EXISTS settings (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS task_tombstones (
+			task_id TEXT PRIMARY KEY,
+			deleted_at TEXT NOT NULL
 		);
 	`); err != nil {
 		_ = db.Close()
@@ -201,6 +217,9 @@ func (a *App) CreateTask(input CreateTaskInput) (Task, error) {
 	}
 	_, err := a.db.Exec(`INSERT INTO tasks(id, title, completed, created_at, updated_at) VALUES(?, ?, 0, ?, ?)`,
 		task.ID, task.Title, task.CreatedAt, task.UpdatedAt)
+	if err == nil {
+		a.scheduleDriveSync()
+	}
 	return task, err
 }
 
@@ -228,7 +247,11 @@ func (a *App) SetTaskCompleted(taskID string, completed bool) error {
 	if count == 0 {
 		return errors.New("task not found")
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	a.scheduleDriveSync()
+	return nil
 }
 
 // DeleteTask permanently removes a completed task and its time entries.
@@ -238,7 +261,24 @@ func (a *App) DeleteTask(taskID string) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	result, err := a.db.Exec(`DELETE FROM tasks WHERE id = ? AND completed = 1`, taskID)
+	tx, err := a.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var completed bool
+	if err := tx.QueryRow(`SELECT completed FROM tasks WHERE id = ?`, taskID).Scan(&completed); err != nil || !completed {
+		if errors.Is(err, sql.ErrNoRows) || !completed {
+			return errors.New("only completed tasks can be deleted")
+		}
+		return err
+	}
+	deletedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := tx.Exec(`INSERT INTO task_tombstones(task_id, deleted_at) VALUES(?, ?)
+		ON CONFLICT(task_id) DO UPDATE SET deleted_at=excluded.deleted_at WHERE excluded.deleted_at > task_tombstones.deleted_at`, taskID, deletedAt); err != nil {
+		return err
+	}
+	result, err := tx.Exec(`DELETE FROM tasks WHERE id = ? AND completed = 1`, taskID)
 	if err != nil {
 		return err
 	}
@@ -249,6 +289,10 @@ func (a *App) DeleteTask(taskID string) error {
 	if deleted == 0 {
 		return errors.New("only completed tasks can be deleted")
 	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	a.scheduleDriveSync()
 	return nil
 }
 
@@ -281,7 +325,11 @@ func (a *App) StartTimer(taskID string) error {
 	if err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	a.scheduleDriveSync()
+	return nil
 }
 
 func (a *App) StopTimer(note string) error {
@@ -298,7 +346,11 @@ func (a *App) StopTimer(note string) error {
 	if err := a.stopTimerTxWithNote(tx, "", strings.TrimSpace(note)); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	a.scheduleDriveSync()
+	return nil
 }
 
 // PauseTimer saves the current running segment and keeps the task punched in.
@@ -340,7 +392,11 @@ func (a *App) PauseTimer() error {
 	if _, err := tx.Exec(`UPDATE active_timer SET paused = 1, started_at = ?, session_seconds = ? WHERE singleton = 1`, endedAt, sessionSeconds+duration); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	a.scheduleDriveSync()
+	return nil
 }
 
 // ResumeTimer begins a new timed segment for the paused task.
@@ -361,6 +417,7 @@ func (a *App) ResumeTimer() error {
 	if updated == 0 {
 		return errors.New("timer is not paused")
 	}
+	a.scheduleDriveSync()
 	return nil
 }
 
@@ -403,6 +460,9 @@ func (a *App) LogTime(taskID, startedAt, endedAt string) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err = a.db.Exec(`INSERT INTO time_entries(id, task_id, started_at, ended_at, duration_seconds, note, device_id, created_at) VALUES(?, ?, ?, ?, ?, '', ?, ?)`,
 		newID(), taskID, started.UTC().Format(time.RFC3339Nano), ended.UTC().Format(time.RFC3339Nano), duration, a.deviceID, now)
+	if err == nil {
+		a.scheduleDriveSync()
+	}
 	return err
 }
 
@@ -540,36 +600,10 @@ func (a *App) ImportBackup() (string, error) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return "", fmt.Errorf("invalid Punchcard backup: %w", err)
 	}
-	if doc.SchemaVersion != 1 {
-		return "", fmt.Errorf("unsupported backup schema version %d", doc.SchemaVersion)
-	}
-	tx, err := a.db.Begin()
-	if err != nil {
+	if err := a.mergeSyncDocument(doc); err != nil {
 		return "", err
 	}
-	defer func() { _ = tx.Rollback() }()
-	for _, task := range doc.Tasks {
-		if strings.TrimSpace(task.ID) == "" || strings.TrimSpace(task.Title) == "" {
-			continue
-		}
-		_, err = tx.Exec(`INSERT INTO tasks(id, title, completed, created_at, updated_at)
-			VALUES(?, ?, ?, ?, ?)
-			ON CONFLICT(id) DO UPDATE SET title=excluded.title, completed=excluded.completed, updated_at=excluded.updated_at
-			WHERE excluded.updated_at > tasks.updated_at`, task.ID, task.Title, task.Completed, task.CreatedAt, task.UpdatedAt)
-		if err != nil {
-			return "", err
-		}
-	}
-	for _, entry := range doc.Entries {
-		_, err = tx.Exec(`INSERT OR IGNORE INTO time_entries(id, task_id, started_at, ended_at, duration_seconds, note, device_id, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-			entry.ID, entry.TaskID, entry.StartedAt, entry.EndedAt, entry.DurationSeconds, entry.Note, entry.DeviceID, entry.CreatedAt)
-		if err != nil {
-			return "", err
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return "", err
-	}
+	a.scheduleDriveSync()
 	return path, nil
 }
 
@@ -578,13 +612,94 @@ func (a *App) buildSyncDocument() (SyncDocument, error) {
 	if err != nil {
 		return SyncDocument{}, err
 	}
-	return SyncDocument{
-		SchemaVersion: 1,
+	doc := SyncDocument{
+		SchemaVersion: 2,
 		ExportedAt:    time.Now().UTC().Format(time.RFC3339Nano),
 		DeviceID:      a.deviceID,
 		Tasks:         state.Tasks,
 		Entries:       state.Entries,
-	}, nil
+		Tombstones:    []TaskTombstone{},
+	}
+	rows, err := a.db.Query(`SELECT task_id, deleted_at FROM task_tombstones ORDER BY deleted_at`)
+	if err != nil {
+		return SyncDocument{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var tombstone TaskTombstone
+		if err := rows.Scan(&tombstone.TaskID, &tombstone.DeletedAt); err != nil {
+			return SyncDocument{}, err
+		}
+		doc.Tombstones = append(doc.Tombstones, tombstone)
+	}
+	return doc, rows.Err()
+}
+
+// mergeSyncDocument merges a portable snapshot into the open database. The
+// caller must hold a.mu so local mutations cannot interleave with the merge.
+func (a *App) mergeSyncDocument(doc SyncDocument) error {
+	if doc.SchemaVersion != 1 && doc.SchemaVersion != 2 {
+		return fmt.Errorf("unsupported backup schema version %d", doc.SchemaVersion)
+	}
+	tx, err := a.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, tombstone := range doc.Tombstones {
+		if strings.TrimSpace(tombstone.TaskID) == "" || strings.TrimSpace(tombstone.DeletedAt) == "" {
+			continue
+		}
+		if _, err = tx.Exec(`INSERT INTO task_tombstones(task_id, deleted_at) VALUES(?, ?)
+			ON CONFLICT(task_id) DO UPDATE SET deleted_at=excluded.deleted_at WHERE excluded.deleted_at > task_tombstones.deleted_at`, tombstone.TaskID, tombstone.DeletedAt); err != nil {
+			return err
+		}
+	}
+	for _, task := range doc.Tasks {
+		if strings.TrimSpace(task.ID) == "" || strings.TrimSpace(task.Title) == "" {
+			continue
+		}
+		var deletedAt string
+		tombstoneErr := tx.QueryRow(`SELECT deleted_at FROM task_tombstones WHERE task_id = ?`, task.ID).Scan(&deletedAt)
+		if tombstoneErr != nil && !errors.Is(tombstoneErr, sql.ErrNoRows) {
+			return tombstoneErr
+		}
+		if tombstoneErr == nil && deletedAt >= task.UpdatedAt {
+			continue
+		}
+		if tombstoneErr == nil {
+			if _, err = tx.Exec(`DELETE FROM task_tombstones WHERE task_id = ?`, task.ID); err != nil {
+				return err
+			}
+		}
+		if _, err = tx.Exec(`INSERT INTO tasks(id, title, completed, created_at, updated_at)
+			VALUES(?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET title=excluded.title, completed=excluded.completed, updated_at=excluded.updated_at
+			WHERE excluded.updated_at > tasks.updated_at`, task.ID, task.Title, task.Completed, task.CreatedAt, task.UpdatedAt); err != nil {
+			return err
+		}
+	}
+	// A task changed after an older deletion wins; otherwise the tombstone wins.
+	if _, err = tx.Exec(`DELETE FROM task_tombstones
+		WHERE EXISTS (SELECT 1 FROM tasks WHERE tasks.id = task_tombstones.task_id AND tasks.updated_at > task_tombstones.deleted_at)`); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`DELETE FROM tasks
+		WHERE EXISTS (SELECT 1 FROM task_tombstones WHERE task_tombstones.task_id = tasks.id AND task_tombstones.deleted_at >= tasks.updated_at)`); err != nil {
+		return err
+	}
+	for _, entry := range doc.Entries {
+		if strings.TrimSpace(entry.ID) == "" || strings.TrimSpace(entry.TaskID) == "" || entry.DurationSeconds <= 0 {
+			continue
+		}
+		if _, err = tx.Exec(`INSERT OR IGNORE INTO time_entries(id, task_id, started_at, ended_at, duration_seconds, note, device_id, created_at)
+			SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tasks WHERE id = ?)`,
+			entry.ID, entry.TaskID, entry.StartedAt, entry.EndedAt, entry.DurationSeconds, entry.Note, entry.DeviceID, entry.CreatedAt, entry.TaskID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func newID() string {
