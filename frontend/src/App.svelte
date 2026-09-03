@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import { CreateTask, DeleteTask, GetState, GetTaskTimeSummary, LogTime, PauseTimer, ResumeTimer, SetTaskCompleted, StartTimer, StopTimer } from '../wailsjs/go/main/App'
   import { Quit, WindowMinimise, WindowToggleMaximise } from '../wailsjs/runtime/runtime'
 
@@ -13,6 +13,7 @@
   let selectedTaskID = ''
   let newTitle = ''
   let addingTask = false
+  let newTaskInput: HTMLInputElement
   let busy = true
   let error = ''
   let now = Date.now()
@@ -108,6 +109,13 @@
       error = message(reason)
       busy = false
     }
+  }
+
+  async function beginAddingTask() {
+    addingTask = true
+    await tick()
+    newTaskInput.focus()
+    newTaskInput.select()
   }
 
   async function complete(task: Task) {
@@ -360,7 +368,7 @@
 </script>
 
 <svelte:window on:click={() => statsTask = null} on:keydown={(event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'n') addingTask = true
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'n') { event.preventDefault(); void beginAddingTask() }
   if (event.code === 'Space' && event.target === document.body) { event.preventDefault(); void toggleTimer() }
   if (event.key === 'Escape') { statsTask = null; deleteTarget = null }
 }} />
@@ -379,22 +387,26 @@
   <div class="workspace">
     <section class="timer-pane">
       <div class:live={state.activeTimer && !state.activeTimer.paused} class:paused={state.activeTimer?.paused} class="timer-card">
-        <span class="kicker">{state.activeTimer ? state.activeTimer.paused ? 'Ⅱ PAUSED' : '● ON THE CLOCK' : 'READY TO WORK'}</span>
-        <h1>{state.activeTimer?.taskTitle || selectedTask?.title || 'Select a task'}</h1>
-        <div class="timer">{formatTime(elapsed)}</div>
-        {#if state.activeTimer}
-          <div class="timer-actions">
-            <button class="pause-button" disabled={busy} on:click={togglePause}>{state.activeTimer.paused ? '▶ RESUME' : 'Ⅱ PAUSE'}</button>
-            <button class="punch-button stop" disabled={busy} on:click={toggleTimer}>■ PUNCH OUT</button>
-          </div>
-        {:else}
-          <button class="punch-button" disabled={busy || !selectedTaskID} on:click={toggleTimer}>▶ PUNCH IN</button>
-        {/if}
+        <div class="panel-titlebar" aria-hidden="true"><strong>TIMER</strong><span class="panel-window-controls"><b>—</b><b>□</b><b>×</b></span></div>
+        <div class="timer-content">
+          <span class="kicker">{state.activeTimer ? state.activeTimer.paused ? 'Ⅱ PAUSED' : '● ON THE CLOCK' : 'READY TO WORK'}</span>
+          <h1>{state.activeTimer?.taskTitle || selectedTask?.title || 'Select a task'}</h1>
+          <div class="timer">{formatTime(elapsed)}</div>
+          {#if state.activeTimer}
+            <div class="timer-actions">
+              <button class="pause-button" disabled={busy} on:click={togglePause}>{state.activeTimer.paused ? '▶ RESUME' : 'Ⅱ PAUSE'}</button>
+              <button class="punch-button stop" disabled={busy} on:click={toggleTimer}>■ PUNCH OUT</button>
+            </div>
+          {:else}
+            <button class="punch-button" disabled={busy || !selectedTaskID} on:click={toggleTimer}>▶ PUNCH IN</button>
+          {/if}
+        </div>
       </div>
 
-      <div class="options">
-        <div class="log-heading"><span>LOG TIME</span></div>
-        <div class="time-field">
+      <section class="log-window">
+        <div class="panel-titlebar" aria-hidden="true"><strong>LOG TIME</strong><span class="panel-window-controls"><b>—</b><b>□</b><b>×</b></span></div>
+        <div class="options">
+          <div class="time-field">
           <label for="log-start-hour">START</label>
           <div class="time-input" role="group" aria-label="Start time">
             <input class="time-hour" id="log-start-hour" bind:this={startHourInput} value={startHour} inputmode="numeric" autocomplete="off" maxlength="2" aria-label="Start hour" on:input={(event) => typeNumber('start', 'hour', event)} on:focus={(event) => activatePart('start', event)} on:click={(event) => activatePart('start', event)} on:blur={() => normalizeTime('start')} on:keydown={(event) => timeKeydown('start', 'hour', event)} />
@@ -408,8 +420,8 @@
               {#each timeOptions as option}<button type="button" class:selected-time={option === formatClock(fieldMinutes('start') ?? -1)} on:mousedown|preventDefault on:click={() => chooseTime('start', option)}>{option}</button>{/each}
             </div>
           {/if}
-        </div>
-        <div class="time-field">
+          </div>
+          <div class="time-field">
           <label for="log-end-hour">END</label>
           <div class="time-input" role="group" aria-label="End time">
             <input class="time-hour" id="log-end-hour" bind:this={endHourInput} value={endHour} inputmode="numeric" autocomplete="off" maxlength="2" aria-label="End hour" on:input={(event) => typeNumber('end', 'hour', event)} on:focus={(event) => activatePart('end', event)} on:click={(event) => activatePart('end', event)} on:blur={() => normalizeTime('end')} on:keydown={(event) => timeKeydown('end', 'hour', event)} />
@@ -423,24 +435,25 @@
               {#each timeOptions as option}<button type="button" class:selected-time={option === formatClock(fieldMinutes('end') ?? -1)} on:mousedown|preventDefault on:click={() => chooseTime('end', option)}>{option}</button>{/each}
             </div>
           {/if}
+          </div>
+          <button class="log-add" disabled={busy || !selectedTaskID} on:click={addLoggedTime}>＋ ADD</button>
         </div>
-        <button class="log-add" disabled={busy || !selectedTaskID} on:click={addLoggedTime}>＋ ADD</button>
-      </div>
+      </section>
 
       {#if error}<div class="error" role="alert">{error}<button on:click={() => error = ''}>×</button></div>{/if}
     </section>
 
     <aside class="task-sidebar">
-      <div class="sidebar-title"><strong>ALL TASKS</strong><span>{openTasks.length} OPEN</span></div>
+      <div class="sidebar-title panel-titlebar"><strong>ALL TASKS</strong><span class="task-count">{openTasks.length} OPEN</span><span class="panel-window-controls" aria-hidden="true"><b>—</b><b>□</b><b>×</b></span></div>
 
       {#if addingTask}
         <form class="new-task" on:submit|preventDefault={addTask}>
-          <input bind:value={newTitle} aria-label="New task title" placeholder="New task…" maxlength="120" />
+          <input bind:this={newTaskInput} bind:value={newTitle} aria-label="New task title" placeholder="New task…" maxlength="120" />
           <button type="submit" disabled={!newTitle.trim() || busy}>ADD</button>
           <button type="button" aria-label="Cancel" on:click={() => addingTask = false}>×</button>
         </form>
       {:else}
-        <button class="add-task" on:click={() => addingTask = true}>＋ ADD A TASK</button>
+        <button class="add-task" on:click={beginAddingTask}>＋ ADD A TASK</button>
       {/if}
 
       <div class="task-list">
@@ -474,7 +487,7 @@
 {#if deleteTarget}
   <div class="modal-layer">
     <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-message">
-      <div class="confirm-title"><span aria-hidden="true">!</span><strong id="delete-title">DELETE TASK?</strong><i></i></div>
+      <div class="confirm-title panel-titlebar"><strong id="delete-title">DELETE TASK?</strong><span class="panel-window-controls" aria-hidden="true"><b>—</b><b>□</b><b>×</b></span></div>
       <div class="confirm-body">
         <div class="trash-icon" aria-hidden="true">×</div>
         <div><strong>{deleteTarget.title}</strong><p id="delete-message">This permanently removes the task and all of its recorded time.</p></div>

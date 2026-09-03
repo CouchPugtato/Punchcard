@@ -38,8 +38,15 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px d
 
 .workspace { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(360px, 1fr) 250px; gap: 12px; padding: 13px; background: var(--canvas); }
 .timer-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 11px; }
-.timer-card { flex: 1; min-height: 230px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px; border: 2px solid var(--line); border-radius: 6px; background: var(--paper); box-shadow: 5px 5px 0 var(--shadow); text-align: center; }
+.timer-card { flex: 1; min-height: 230px; display: grid; grid-template-rows: 29px minmax(0, 1fr); border: 2px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--paper); box-shadow: 5px 5px 0 var(--shadow); text-align: center; }
 .timer-card.live { box-shadow: 5px 5px 0 var(--shadow); }
+.timer-content { min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 5px; padding: 9px 13px 13px; border: 1px solid var(--selected); background: var(--paper); box-shadow: inset 2px 2px 0 rgba(112,99,77,.18); }
+.panel-titlebar { height: 29px; display: grid; grid-template-columns: 1fr auto; align-items: center; padding-left: 8px; border-bottom: 2px solid var(--line); background: var(--raised); box-shadow: inset 0 2px 0 var(--paper-light), inset 0 -2px 0 var(--selected); user-select: none; }
+.panel-titlebar strong { justify-self: start; font-size: 9px; letter-spacing: .08em; text-align: left; white-space: nowrap; }
+.panel-window-controls { align-self: stretch; display: grid; grid-template-columns: repeat(3, 23px); border-left: 1px solid var(--line); }
+.panel-window-controls b { display: grid; place-items: center; border-left: 1px solid rgba(73,63,48,.35); background: rgba(250,243,220,.24); font-size: 10px; line-height: 1; }
+.panel-window-controls b:first-child { border-left: 0; }
+.panel-window-controls b:last-child { background: var(--paper-light); }
 .kicker { padding: 4px 9px; border: 1px solid var(--line); border-radius: 3px; color: var(--line); background: var(--raised); font-size: 9px; font-weight: 700; letter-spacing: .08em; }
 .live .kicker { color: var(--paper-light); background: var(--line); }
 .paused .kicker { color: var(--line); background: var(--paper-light); border-style: dashed; }
@@ -54,14 +61,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px d
 .pause-button { min-width: 112px; height: 40px; border: 2px solid var(--line); border-radius: 3px; color: var(--line); background: var(--paper-light); box-shadow: 3px 3px 0 var(--shadow); font-family: var(--font-pixel); font-size: 10px; font-weight: 700; }
 .pause-button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--shadow); }
 
-.options { display: grid; grid-template-columns: 78px minmax(105px, 1fr) minmax(105px, 1fr) 60px; gap: 6px; align-items: end; padding: 9px; border: 2px solid var(--line); border-radius: 4px; background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); }
+.log-window { border: 2px solid var(--line); border-radius: 5px; overflow: visible; background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); }
+.log-window > .panel-titlebar { border-radius: 3px 3px 0 0; }
+.options { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(130px, 1fr) 60px; gap: 7px; align-items: end; margin: 5px; padding: 8px; border: 1px solid var(--selected); background: var(--paper); box-shadow: inset 2px 2px 0 rgba(112,99,77,.18); }
 .time-field { position: relative; display: grid; gap: 4px; min-width: 0; }
 .time-field label { font-size: 8px; font-weight: 700; letter-spacing: .08em; }
-.time-input { position: relative; min-width: 105px; height: 31px; display: grid; grid-template-columns: 23px 6px 25px minmax(25px, 1fr) 19px; align-items: stretch; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; background: var(--paper-light); box-shadow: 1px 1px 0 var(--shadow); }
+.time-input { position: relative; min-width: 105px; height: 31px; display: grid; grid-template-columns: minmax(25px, 1fr) 7px minmax(30px, 1fr) 32px 19px; align-items: stretch; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; background: var(--paper-light); box-shadow: 1px 1px 0 var(--shadow); }
 .time-input input, .options > button { height: 31px; font-size: 9px; font-weight: 700; }
 .time-input input { min-width: 0; height: 29px; padding: 0 2px; border: 0; border-radius: 0; outline-offset: -2px; background: var(--paper-light); text-align: center; text-transform: uppercase; }
 .time-input .time-hour { padding-left: 4px; }
-.time-input .time-separator { display: grid; place-items: center; background: var(--paper-light); pointer-events: none; font-size: 9px; }
+.time-input .time-separator { display: grid; place-items: center; background: var(--paper-light); pointer-events: none; font-size: 14px; font-weight: 700; line-height: 1; }
 .time-input .time-period { border-left: 1px dashed var(--selected); }
 .time-input input:focus { outline: 0; color: var(--paper-light); background: var(--line); }
 .time-arrow { width: 19px; height: 29px; padding: 0; border: 0; border-left: 1px solid var(--line); background: var(--raised); font-size: 9px; }
@@ -73,15 +82,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px d
 .time-dropdown button { min-height: 27px; padding: 0 6px; border: 0; border-bottom: 1px dashed var(--selected); background: var(--paper); font-family: var(--font-pixel); font-size: 9px; text-align: left; }
 .time-dropdown button:hover, .time-dropdown button.selected-time { color: var(--paper-light); background: var(--line); }
 .time-dropdown button:last-child { border-bottom: 0; }
-.log-heading { min-width: 0; height: 31px; display: flex; align-items: center; align-self: end; }
-.log-heading span { font-size: 8px; font-weight: 700; letter-spacing: .08em; }
 .log-add { align-self: end; }
 .error { display: flex; gap: 8px; align-items: center; padding: 8px 9px; border: 2px solid var(--line); border-radius: 3px; color: var(--line); background: var(--raised); box-shadow: 2px 2px 0 var(--shadow); font-size: 10px; }
 .error button { margin-left: auto; border: 0; background: transparent; }
 
-.task-sidebar { min-width: 0; min-height: 0; display: grid; grid-template-rows: 41px auto 1fr; border: 2px solid var(--line); border-radius: 5px; overflow: hidden; background: var(--paper); box-shadow: 5px 5px 0 var(--shadow); }
-.sidebar-title { display: flex; align-items: center; justify-content: space-between; padding: 0 11px; border-bottom: 2px solid var(--line); background: var(--raised); font-size: 10px; letter-spacing: .06em; }
-.sidebar-title span { font-size: 8px; opacity: .72; }
+.task-sidebar { min-width: 0; min-height: 0; display: grid; grid-template-rows: 29px auto 1fr; border: 2px solid var(--line); border-radius: 5px; overflow: hidden; background: var(--paper); box-shadow: 5px 5px 0 var(--shadow); }
+.sidebar-title { grid-template-columns: 1fr auto auto; padding-left: 8px; }
+.sidebar-title .task-count { margin-right: 7px; color: var(--muted); font-size: 8px; opacity: .72; white-space: nowrap; }
 .add-task { height: 37px; border: 0; border-bottom: 1px solid var(--line); background: var(--paper-light); text-align: left; padding: 0 11px; font-size: 9px; font-weight: 700; letter-spacing: .05em; }
 .add-task:hover { background: var(--raised); }
 .new-task { display: grid; grid-template-columns: 1fr auto auto; gap: 4px; padding: 6px; border-bottom: 1px solid var(--line); background: var(--paper-light); }
@@ -113,14 +120,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px d
 
 .modal-layer { position: fixed; z-index: 30; inset: 30px 2px 2px; display: grid; place-items: center; padding: 16px; background: rgba(73,63,48,.46); }
 .confirm-dialog { width: min(370px, 100%); border: 2px solid var(--line); border-radius: 5px; overflow: hidden; background: var(--paper); box-shadow: 6px 6px 0 var(--shadow); }
-.confirm-title { height: 34px; display: grid; grid-template-columns: 22px auto 1fr; align-items: center; gap: 8px; padding: 0 8px; border-bottom: 2px solid var(--line); background: var(--raised); font-size: 11px; }
-.confirm-title span { width: 20px; height: 20px; display: grid; place-items: center; border: 2px solid var(--line); background: var(--paper-light); font-size: 12px; font-weight: 700; }
-.confirm-title i { height: 12px; background: repeating-linear-gradient(to bottom, transparent 0, transparent 2px, var(--line) 2px, var(--line) 3px); opacity: .65; }
-.confirm-body { display: grid; grid-template-columns: 43px 1fr; gap: 13px; align-items: center; padding: 23px 20px 19px; }
+.confirm-title { grid-template-columns: 1fr auto; padding-left: 8px; }
+.confirm-body { display: grid; grid-template-columns: 43px 1fr; gap: 13px; align-items: center; margin: 5px 5px 0; padding: 20px 16px 17px; border: 1px solid var(--selected); border-bottom: 0; background: var(--paper); box-shadow: inset 2px 2px 0 rgba(112,99,77,.18); }
 .trash-icon { width: 40px; height: 46px; display: grid; place-items: center; border: 2px solid var(--line); border-top-width: 5px; background: var(--paper-light); box-shadow: 3px 3px 0 var(--selected); font-family: var(--font-medium); font-size: 19px; }
 .confirm-body strong { display: block; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-medium); font-size: 13px; white-space: nowrap; }
 .confirm-body p { margin: 9px 0 0; color: var(--muted); font-family: var(--font-pixel); font-size: 9px; line-height: 1.6; }
-.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px; border-top: 1px dashed var(--selected); background: var(--paper-light); }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin: 0 5px 5px; padding: 10px; border: 1px solid var(--selected); border-top-style: dashed; background: var(--paper-light); }
 .confirm-actions button { min-width: 82px; height: 32px; border: 2px solid var(--line); border-radius: 2px; background: var(--raised); box-shadow: 2px 2px 0 var(--shadow); font-family: var(--font-pixel); font-size: 9px; font-weight: 700; }
 .confirm-actions button:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--shadow); }
 .confirm-actions .confirm-delete { color: var(--paper-light); background: var(--line); }
@@ -128,8 +133,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px d
 @media (max-width: 680px) {
   .workspace { grid-template-columns: minmax(330px, 1fr) 205px; gap: 9px; padding: 10px; }
   .timer { min-width: 230px; }
-  .options { grid-template-columns: 64px minmax(94px, 1fr) minmax(94px, 1fr) 52px; padding: 7px; gap: 4px; }
-  .time-input { min-width: 94px; grid-template-columns: 21px 5px 23px minmax(24px, 1fr) 18px; }
+  .options { grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) 52px; padding: 7px; gap: 5px; }
+  .time-input { min-width: 94px; grid-template-columns: minmax(22px, 1fr) 6px minmax(25px, 1fr) 30px 18px; }
   .options > button { padding: 0 3px; }
 }
 
