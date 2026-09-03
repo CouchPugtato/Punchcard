@@ -55,12 +55,24 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px d
 .pause-button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--shadow); }
 
 .options { display: grid; grid-template-columns: 78px minmax(105px, 1fr) minmax(105px, 1fr) 60px; gap: 6px; align-items: end; padding: 9px; border: 2px solid var(--line); border-radius: 4px; background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); }
-.options label { display: grid; gap: 4px; min-width: 0; }
-.options label span { font-size: 8px; font-weight: 700; letter-spacing: .08em; }
-.options input, .options button { height: 31px; border: 1px solid var(--line); border-radius: 2px; background: var(--paper-light); box-shadow: 1px 1px 0 var(--shadow); font-size: 9px; font-weight: 700; }
-.options input { min-width: 105px; width: 100%; padding: 0 6px; }
-.options button { padding: 0 8px; background: var(--raised); }
-.options button:active { transform: translate(1px, 1px); box-shadow: none; }
+.time-field { position: relative; display: grid; gap: 4px; min-width: 0; }
+.time-field label { font-size: 8px; font-weight: 700; letter-spacing: .08em; }
+.time-input { position: relative; min-width: 105px; height: 31px; display: grid; grid-template-columns: 23px 6px 25px minmax(25px, 1fr) 19px; align-items: stretch; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; background: var(--paper-light); box-shadow: 1px 1px 0 var(--shadow); }
+.time-input input, .options > button { height: 31px; font-size: 9px; font-weight: 700; }
+.time-input input { min-width: 0; height: 29px; padding: 0 2px; border: 0; border-radius: 0; outline-offset: -2px; background: var(--paper-light); text-align: center; text-transform: uppercase; }
+.time-input .time-hour { padding-left: 4px; }
+.time-input .time-separator { display: grid; place-items: center; background: var(--paper-light); pointer-events: none; font-size: 9px; }
+.time-input .time-period { border-left: 1px dashed var(--selected); }
+.time-input input:focus { outline: 0; color: var(--paper-light); background: var(--line); }
+.time-arrow { width: 19px; height: 29px; padding: 0; border: 0; border-left: 1px solid var(--line); background: var(--raised); font-size: 9px; }
+.time-arrow:hover { background: var(--selected); }
+.options > button { border: 1px solid var(--line); border-radius: 2px; background: var(--paper-light); box-shadow: 1px 1px 0 var(--shadow); }
+.options > button { padding: 0 8px; background: var(--raised); }
+.options > button:active { transform: translate(1px, 1px); box-shadow: none; }
+.time-dropdown { position: absolute; z-index: 40; right: 0; bottom: 36px; left: 0; max-height: 151px; display: grid; gap: 1px; padding: 4px; overflow-y: auto; border: 2px solid var(--line); border-radius: 3px; background: var(--paper); box-shadow: 4px 4px 0 var(--shadow); scrollbar-color: var(--selected) var(--paper); scrollbar-width: thin; }
+.time-dropdown button { min-height: 27px; padding: 0 6px; border: 0; border-bottom: 1px dashed var(--selected); background: var(--paper); font-family: var(--font-pixel); font-size: 9px; text-align: left; }
+.time-dropdown button:hover, .time-dropdown button.selected-time { color: var(--paper-light); background: var(--line); }
+.time-dropdown button:last-child { border-bottom: 0; }
 .log-heading { min-width: 0; height: 31px; display: flex; align-items: center; align-self: end; }
 .log-heading span { font-size: 8px; font-weight: 700; letter-spacing: .08em; }
 .log-add { align-self: end; }
@@ -117,8 +129,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px d
   .workspace { grid-template-columns: minmax(330px, 1fr) 205px; gap: 9px; padding: 10px; }
   .timer { min-width: 230px; }
   .options { grid-template-columns: 64px minmax(94px, 1fr) minmax(94px, 1fr) 52px; padding: 7px; gap: 4px; }
-  .options input { min-width: 94px; }
-  .options button { padding: 0 3px; }
+  .time-input { min-width: 94px; grid-template-columns: 21px 5px 23px minmax(24px, 1fr) 18px; }
+  .options > button { padding: 0 3px; }
 }
 
 @media (prefers-reduced-motion: no-preference) {

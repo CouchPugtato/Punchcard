@@ -22,8 +22,22 @@
   let statsLoading = false
   let menuX = 0
   let menuY = 0
-  let logStart = timeValue(new Date(Date.now() - 60 * 60 * 1000))
-  let logEnd = timeValue(new Date())
+  const initialStart = clockParts(new Date(Date.now() - 60 * 60 * 1000))
+  const initialEnd = clockParts(new Date())
+  let startHour = initialStart.hour
+  let startMinute = initialStart.minute
+  let startPeriod = initialStart.period
+  let endHour = initialEnd.hour
+  let endMinute = initialEnd.minute
+  let endPeriod = initialEnd.period
+  let openTimePicker: 'start' | 'end' | null = null
+  let startHourInput: HTMLInputElement
+  let startMinuteInput: HTMLInputElement
+  let startPeriodInput: HTMLInputElement
+  let endHourInput: HTMLInputElement
+  let endMinuteInput: HTMLInputElement
+  let endPeriodInput: HTMLInputElement
+  const timeOptions = Array.from({ length: 48 }, (_, index) => formatClock(index * 30))
 
   $: openTasks = state.tasks.filter(task => !task.completed)
   $: selectedTask = state.tasks.find(task => task.id === selectedTaskID)
@@ -110,13 +124,17 @@
       error = 'Select an open task first'
       return
     }
-    if (!/^\d{2}:\d{2}$/.test(logStart) || !/^\d{2}:\d{2}$/.test(logEnd) || logStart === logEnd) {
+    const startMinutes = parseParts(startHour, startMinute, startPeriod)
+    const endMinutes = parseParts(endHour, endMinute, endPeriod)
+    if (startMinutes === null || endMinutes === null || startMinutes === endMinutes) {
       error = 'Choose two different start and end times'
       return
     }
     try {
       busy = true
-      const { start, end } = recentRange(logStart, logEnd)
+      setTimeParts('start', startMinutes)
+      setTimeParts('end', endMinutes)
+      const { start, end } = recentRange(startMinutes, endMinutes)
       await LogTime(selectedTaskID, start.toISOString(), end.toISOString())
       await refresh()
     } catch (reason) {
@@ -169,20 +187,163 @@
       .map(value => String(value).padStart(2, '0')).join(':')
   }
 
-  function timeValue(date: Date) {
-    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  function clockParts(date: Date) {
+    const hour = date.getHours()
+    return {
+      hour: String(hour % 12 || 12),
+      minute: String(date.getMinutes()).padStart(2, '0'),
+      period: hour >= 12 ? 'PM' : 'AM'
+    }
   }
 
-  function recentRange(startValue: string, endValue: string) {
+  function formatClock(totalMinutes: number) {
+    const hours = Math.floor(totalMinutes / 60) % 24
+    const minutes = totalMinutes % 60
+    const suffix = hours >= 12 ? 'PM' : 'AM'
+    return `${hours % 12 || 12}:${String(minutes).padStart(2, '0')} ${suffix}`
+  }
+
+  function parseParts(hourText: string, minuteText: string, periodText: string): number | null {
+    const hour = Number(hourText)
+    const minute = Number(minuteText)
+    const period = periodText.trim().toUpperCase()
+    if (!Number.isInteger(hour) || hour < 1 || hour > 12 || !Number.isInteger(minute) || minute < 0 || minute > 59 || !['AM', 'PM'].includes(period)) return null
+    return (hour % 12 + (period === 'PM' ? 12 : 0)) * 60 + minute
+  }
+
+  function fieldMinutes(field: 'start' | 'end') {
+    return field === 'start'
+      ? parseParts(startHour, startMinute, startPeriod)
+      : parseParts(endHour, endMinute, endPeriod)
+  }
+
+  function setTimeParts(field: 'start' | 'end', totalMinutes: number) {
+    const hours = Math.floor(totalMinutes / 60) % 24
+    const hour = String(hours % 12 || 12)
+    const minute = String(totalMinutes % 60).padStart(2, '0')
+    const period = hours >= 12 ? 'PM' : 'AM'
+    if (field === 'start') {
+      startHour = hour
+      startMinute = minute
+      startPeriod = period
+    } else {
+      endHour = hour
+      endMinute = minute
+      endPeriod = period
+    }
+  }
+
+  function commitStart() {
+    const minutes = fieldMinutes('start')
+    if (minutes === null) {
+      error = 'Enter a valid start time'
+      return
+    }
+    setTimeParts('start', minutes)
+    openTimePicker = 'end'
+    window.setTimeout(() => { endHourInput.focus(); endHourInput.select() })
+  }
+
+  function typeNumber(field: 'start' | 'end', part: 'hour' | 'minute', event: Event) {
+    const input = event.currentTarget as HTMLInputElement
+    const value = input.value.replace(/\D/g, '').slice(0, 2)
+    if (field === 'start') {
+      if (part === 'hour') startHour = value
+      else startMinute = value
+    } else {
+      if (part === 'hour') endHour = value
+      else endMinute = value
+    }
+    input.value = value
+    if (part === 'hour' && (value.length === 2 || /^[2-9]$/.test(value))) focusPart(field, 'minute')
+    if (part === 'minute' && value.length === 2) focusPart(field, 'period')
+  }
+
+  function typePeriod(field: 'start' | 'end', event: Event) {
+    const input = event.currentTarget as HTMLInputElement
+    const value = input.value.replace(/[^apm]/gi, '').toUpperCase().slice(0, 2)
+    if (field === 'start') startPeriod = value
+    else endPeriod = value
+    input.value = value
+    if (field === 'start' && /^(AM|PM)$/.test(value) && fieldMinutes('start') !== null) commitStart()
+  }
+
+  function focusPart(field: 'start' | 'end', part: 'hour' | 'minute' | 'period') {
+    const input = field === 'start'
+      ? part === 'hour' ? startHourInput : part === 'minute' ? startMinuteInput : startPeriodInput
+      : part === 'hour' ? endHourInput : part === 'minute' ? endMinuteInput : endPeriodInput
+    input.focus()
+    input.select()
+  }
+
+  function activatePart(field: 'start' | 'end', event: Event) {
+    openTimePicker = field
+    const input = event.currentTarget as HTMLInputElement
+    window.setTimeout(() => input.select())
+  }
+
+  function timeKeydown(field: 'start' | 'end', part: 'hour' | 'minute' | 'period', event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      if (field === 'start') commitStart()
+      else commitEnd(true)
+    } else if (part === 'hour' && [':', '.', ' '].includes(event.key)) {
+      event.preventDefault()
+      focusPart(field, 'minute')
+    } else if (part === 'minute' && ['a', 'A', 'p', 'P'].includes(event.key)) {
+      event.preventDefault()
+      if (field === 'start') startPeriod = `${event.key.toUpperCase()}M`
+      else endPeriod = `${event.key.toUpperCase()}M`
+      if (field === 'start' && fieldMinutes('start') !== null) commitStart()
+      else focusPart(field, 'period')
+    }
+  }
+
+  function commitEnd(submit = false) {
+    const minutes = fieldMinutes('end')
+    if (minutes === null) {
+      error = 'Enter a valid end time'
+      return
+    }
+    setTimeParts('end', minutes)
+    openTimePicker = null
+    if (submit) void addLoggedTime()
+  }
+
+  function chooseTime(field: 'start' | 'end', value: string) {
+    const [clock, period] = value.split(' ')
+    const [hour, minute] = clock.split(':').map(Number)
+    const minutes = (hour % 12 + (period === 'PM' ? 12 : 0)) * 60 + minute
+    setTimeParts(field, minutes)
+    if (field === 'start') {
+      commitStart()
+    } else {
+      openTimePicker = null
+      endHourInput.focus()
+    }
+  }
+
+  function normalizeTime(field: 'start' | 'end') {
+    window.setTimeout(() => {
+      const focused = document.activeElement
+      const inputs = field === 'start'
+        ? [startHourInput, startMinuteInput, startPeriodInput]
+        : [endHourInput, endMinuteInput, endPeriodInput]
+      if (inputs.includes(focused as HTMLInputElement)) return
+      const minutes = fieldMinutes(field)
+      if (minutes !== null) setTimeParts(field, minutes)
+      if (openTimePicker === field) openTimePicker = null
+    }, 120)
+  }
+
+  function recentRange(startMinutes: number, endMinutes: number) {
     const now = new Date()
-    const [endHour, endMinute] = endValue.split(':').map(Number)
     const end = new Date(now)
-    end.setHours(endHour, endMinute, 0, 0)
+    end.setHours(Math.floor(endMinutes / 60), endMinutes % 60, 0, 0)
     if (end.getTime() > now.getTime()) end.setDate(end.getDate() - 1)
 
-    const [startHour, startMinute] = startValue.split(':').map(Number)
     const start = new Date(end)
-    start.setHours(startHour, startMinute, 0, 0)
+    start.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0)
     if (start.getTime() >= end.getTime()) start.setDate(start.getDate() - 1)
     return { start, end }
   }
@@ -233,8 +394,36 @@
 
       <div class="options">
         <div class="log-heading"><span>LOG TIME</span></div>
-        <label><span>START</span><input type="time" bind:value={logStart} /></label>
-        <label><span>END</span><input type="time" bind:value={logEnd} /></label>
+        <div class="time-field">
+          <label for="log-start-hour">START</label>
+          <div class="time-input" role="group" aria-label="Start time">
+            <input class="time-hour" id="log-start-hour" bind:this={startHourInput} value={startHour} inputmode="numeric" autocomplete="off" maxlength="2" aria-label="Start hour" on:input={(event) => typeNumber('start', 'hour', event)} on:focus={(event) => activatePart('start', event)} on:click={(event) => activatePart('start', event)} on:blur={() => normalizeTime('start')} on:keydown={(event) => timeKeydown('start', 'hour', event)} />
+            <span class="time-separator" aria-hidden="true">:</span>
+            <input class="time-minute" bind:this={startMinuteInput} value={startMinute} inputmode="numeric" autocomplete="off" maxlength="2" aria-label="Start minute" on:input={(event) => typeNumber('start', 'minute', event)} on:focus={(event) => activatePart('start', event)} on:click={(event) => activatePart('start', event)} on:blur={() => normalizeTime('start')} on:keydown={(event) => timeKeydown('start', 'minute', event)} />
+            <input class="time-period" bind:this={startPeriodInput} value={startPeriod} inputmode="text" autocomplete="off" maxlength="2" aria-label="Start AM or PM" on:input={(event) => typePeriod('start', event)} on:focus={(event) => activatePart('start', event)} on:click={(event) => activatePart('start', event)} on:blur={() => normalizeTime('start')} on:keydown={(event) => timeKeydown('start', 'period', event)} />
+            <button class="time-arrow" type="button" tabindex="-1" aria-label="Show start time choices" aria-expanded={openTimePicker === 'start'} on:mousedown|preventDefault on:click={() => openTimePicker = openTimePicker === 'start' ? null : 'start'}>▾</button>
+          </div>
+          {#if openTimePicker === 'start'}
+            <div class="time-dropdown" role="listbox" aria-label="Start time">
+              {#each timeOptions as option}<button type="button" class:selected-time={option === formatClock(fieldMinutes('start') ?? -1)} on:mousedown|preventDefault on:click={() => chooseTime('start', option)}>{option}</button>{/each}
+            </div>
+          {/if}
+        </div>
+        <div class="time-field">
+          <label for="log-end-hour">END</label>
+          <div class="time-input" role="group" aria-label="End time">
+            <input class="time-hour" id="log-end-hour" bind:this={endHourInput} value={endHour} inputmode="numeric" autocomplete="off" maxlength="2" aria-label="End hour" on:input={(event) => typeNumber('end', 'hour', event)} on:focus={(event) => activatePart('end', event)} on:click={(event) => activatePart('end', event)} on:blur={() => normalizeTime('end')} on:keydown={(event) => timeKeydown('end', 'hour', event)} />
+            <span class="time-separator" aria-hidden="true">:</span>
+            <input class="time-minute" bind:this={endMinuteInput} value={endMinute} inputmode="numeric" autocomplete="off" maxlength="2" aria-label="End minute" on:input={(event) => typeNumber('end', 'minute', event)} on:focus={(event) => activatePart('end', event)} on:click={(event) => activatePart('end', event)} on:blur={() => normalizeTime('end')} on:keydown={(event) => timeKeydown('end', 'minute', event)} />
+            <input class="time-period" bind:this={endPeriodInput} value={endPeriod} inputmode="text" autocomplete="off" maxlength="2" aria-label="End AM or PM" on:input={(event) => typePeriod('end', event)} on:focus={(event) => activatePart('end', event)} on:click={(event) => activatePart('end', event)} on:blur={() => normalizeTime('end')} on:keydown={(event) => timeKeydown('end', 'period', event)} />
+            <button class="time-arrow" type="button" tabindex="-1" aria-label="Show end time choices" aria-expanded={openTimePicker === 'end'} on:mousedown|preventDefault on:click={() => openTimePicker = openTimePicker === 'end' ? null : 'end'}>▾</button>
+          </div>
+          {#if openTimePicker === 'end'}
+            <div class="time-dropdown" role="listbox" aria-label="End time">
+              {#each timeOptions as option}<button type="button" class:selected-time={option === formatClock(fieldMinutes('end') ?? -1)} on:mousedown|preventDefault on:click={() => chooseTime('end', option)}>{option}</button>{/each}
+            </div>
+          {/if}
+        </div>
         <button class="log-add" disabled={busy || !selectedTaskID} on:click={addLoggedTime}>＋ ADD</button>
       </div>
 
